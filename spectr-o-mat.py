@@ -8,7 +8,9 @@ except ImportError:
     # for Python3
     from tkinter import *   ## notice here too
 from math import log
+import numpy
 from datetime import datetime
+import signal
 
 # Plotting
 import matplotlib.pyplot as plot
@@ -17,6 +19,19 @@ import matplotlib.pyplot as plot
 import seabreeze
 seabreeze.use("pyseabreeze")
 import seabreeze.spectrometers as sb
+
+
+# Global control variable
+run_measurement = False
+
+
+# Interrupt handling
+def catch_sigint(signal, frame):
+    global run_measurement
+    if run_measurement:
+        run_measurement = False
+    else:
+        sys.exit(0)
 
 
 class SpectrOMat:
@@ -35,50 +50,63 @@ class SpectrOMat:
             for dev in sb.list_devices():
                 print(' - #' + str(index) + ':', 'Model:', dev.model + '; serial number:', dev.serial)
                 index += 1
-            exit(1)
+            sys.exit(1)
+
+        # Initialize darkness correction
+        SpectrOMat.darkness_correction = [0.0]*(len(SpectrOMat.spectrometer.wavelengths()))
 
         # Define the layout elements
-        SpectrOMat.reset_after = Scale(root, from_=0, to=100000, label='Reset after # measurements', orient=HORIZONTAL)
-        SpectrOMat.reset_after = Scale(root, from_=0, to=100000, label='Reset after # measurements', orient=HORIZONTAL)
+        SpectrOMat.reset_after = Scale(root, from_=0, to=100000, label='Reset after', orient=HORIZONTAL)
         SpectrOMat.reset_after.set(reset_after)
+        SpectrOMat.integration_time = Scale(root, from_=SpectrOMat.spectrometer.minimum_integration_time_micros, to=10000000000, label='Integration time', orient=HORIZONTAL)
+        SpectrOMat.integration_time.set(integration_time_micros)
         SpectrOMat.button_start = Button(root, text='Start Measurement', command=SpectrOMat.measure)
+        SpectrOMat.button_darkness = Button(root, text='Get Darkness Correction', command=SpectrOMat.get_darkness_correction)
+        SpectrOMat.button_exit = Button(root, text='Exit', command=SpectrOMat.exit)
 
         # Define the layout
-        SpectrOMat.entropy.grid(column=0, row=0, rowspan=3)
-        SpectrOMat.equivalent_length.grid(column=0, row=3)
-        SpectrOMat.button_KIT.grid(column=1, row=0, sticky=W)
-        SpectrOMat.button_KITSCC.grid(column=1, row=1, sticky=W)
-        SpectrOMat.button_SCC.grid(column=1, row=2, sticky=W)
-        SpectrOMat.button_extended.grid(column=1, row=3, sticky=W)
-        Label(root).grid(column=0, row=4) # Add spacing
-        SpectrOMat.button_generate.grid(column=0, row=5, columnspan=2)
-        Label(root).grid(column=0, row=6) # Add spacing
-        SpectrOMat.output.grid(column=0, row=7, columnspan=2)
+        SpectrOMat.reset_after.grid(column=0, row=0, rowspan=3)
+        SpectrOMat.integration_time.grid(column=0, row=3, rowspan=3)
+        SpectrOMat.button_start.grid(column=0, row=6)
+        SpectrOMat.button_darkness.grid(column=0, row=7)
+        SpectrOMat.button_exit.grid(column=0, row=8)
 
     @staticmethod
-    def generate():
-        SpectrOMat.output.delete(1.0, END)
-        retries = 0
-        entropy = SpectrOMat.entropy.get()
-        check_method = SpectrOMat.check_method.get()
-        use_extended_separator_set = not SpectrOMat.use_extended_separator_set.get() == 0
-        for item in range(5):
-            kit_check = 1
-            scc_check = 1
-            while ((kit_check > 0) or ((scc_check > 0) and (check_method == 'SCC'))):
-                password = SpectrOMat.generator.generate(randomBits=entropy, use_extended=use_extended_separator_set)
-                kit_check = KITPasswordChecker.check(password)
-                scc_check = SCCPasswordChecker.check(password)
-                retries += 1
-                if (retries >= SpectrOMat.max_retries):
-                    SpectrOMat.output.insert(END, '\nDid not find a password that satisfies the requested\nruleset within a reasonable time; giving up.\nTry increasing the target entropy to ' + str(SpectrOMat.min_entropy[check_method]) + ' bits or higher.', 'error')
-                    break
-            if (retries >= SpectrOMat.max_retries):
-                break
-            if ((scc_check == 0) or (check_method == 'KIT')):
-                SpectrOMat.output.insert(END, '\n  ' + password, 'okay')
+    def measure():
+        global run_measurement
+        run_measurement = True
+        SpectrOMat.spectrometer.integration_time_micros(SpectrOMat.integration_time.get())
+        reset_after = SpectrOMat.reset_after.get()
+        measurement = 0
+        while run_measurement:
+            newData = list(map(lambda x,y:x-y, SpectrOMat.spectrometer.intensities(), SpectrOMat.darkness_correction))
+            if (measurement == 0):
+                data = newData
             else:
-                SpectrOMat.output.insert(END, '\n  ' + password, 'warning')
+                data = list(map(lambda x,y:x+y, data, newData))
+            measurement += 1
+            if (reset_after > 0):
+                measurement %= reset_after
+            print(data)
+
+    @staticmethod
+    def get_darkness_correction():
+        SpectrOMat.spectrometer.integration_time_micros(SpectrOMat.integration_time.get())
+        measurement = 0
+        while measurement < 1:
+            newData = SpectrOMat.spectrometer.intensities()
+            if (measurement == 0):
+                data = newData
+            else:
+                data = list(map(lambda x,y:x+y, data, newData))
+            measurement += 1
+        SpectrOMat.darkness_correction = list(map(lambda x:x/measurement, data))
+        print(SpectrOMat.darkness_correction)
+
+
+    @staticmethod
+    def exit():
+        sys.exit(0)
 
 
 def main(device='#0', integration_time_micros=100000, reset_after=1):
@@ -95,5 +123,7 @@ if __name__ == "__main__":
     parser.add_argument('-r', '--reset_after', dest='reset_after', default='1', help='reset after n measurement cycles with 0 meaning indefinite (default: 1)')
     parser.add_argument('-t', '--integration_time_micros', dest='integration_time_micros', default='100000', help='integration time in microseconds (default: 100000)')
     args = parser.parse_args()
+
+    signal.signal(signal.SIGINT, catch_sigint)
 
     main(args.device, args.integration_time_micros, args.reset_after)
