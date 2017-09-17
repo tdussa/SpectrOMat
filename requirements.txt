@@ -1,0 +1,11 @@
+# for Python 2
+Tkinter
+
+# for Python 3
+tkinter
+
+
+numpy
+matplotlib
+seabreeze
+pyseabreeze
