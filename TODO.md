@@ -6,3 +6,5 @@ In no particular order:
    time is constant
  * Add text input fields in addition to the sliders
  * Add autodetection of overexposure
+ * Save graph snapshots
+ * Save data snapshots
