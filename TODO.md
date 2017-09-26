@@ -7,4 +7,4 @@ In no particular order:
  * ~Add text input fields in addition to the sliders~
  * Add autodetection of overexposure
  * Save graph snapshots
- * Save data snapshots
+ * ~Save data snapshots~

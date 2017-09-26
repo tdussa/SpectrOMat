@@ -103,7 +103,7 @@ class SpectrOMat:
         SpectrOMat.button_stopdarkness_text.set(SpectrOMat.button_stopdarkness_texts[SpectrOMat.run_measurement])
         SpectrOMat.button_stopdarkness = Button(root, textvariable=SpectrOMat.button_stopdarkness_text, command=SpectrOMat.stopdarkness)
 
-        SpectrOMat.button_save = Button(root, text='Save to File', command=SpectrOMat.reset)
+        SpectrOMat.button_save = Button(root, text='Save to File', command=SpectrOMat.save)
         SpectrOMat.button_reset = Button(root, text='Reset', command=SpectrOMat.reset)
         SpectrOMat.button_exit = Button(root, text='Exit', command=SpectrOMat.exit)
 
@@ -218,6 +218,31 @@ class SpectrOMat:
             SpectrOMat.message.set(str(SpectrOMat.dark_frames.get()) + ' dark frames scanned. Ready.')
 
     @staticmethod
+    def save():
+        try:
+            with open(time.strftime('Snapshot-%Y-%m-%dT%H:%M:%S.dat', time.gmtime()), 'w') as f:
+                f.write('# Spectr-O-Mat data format\n')
+                f.write('1')
+                f.write('\n# Time of snapshot\n')
+                f.write(time.strftime(SpectrOMat.timestamp, time.gmtime()))
+                f.write('\n# Number of frames accumulated\n')
+                f.write(str(SpectrOMat.measurement))
+                f.write('\n# Scan time per exposure [µs]\n')
+                f.write(str(SpectrOMat.scan_time.get()))
+                f.write('\n# Dark frame count\n')
+                f.write(str(SpectrOMat.dark_frames.get()))
+                f.write('\n# Wavelengths [nm]\n')
+                f.write(str(list(SpectrOMat.spectrometer.wavelengths())))
+                f.write('\n# Dark frame correction data [count]\n')
+                f.write(str(SpectrOMat.darkness_correction))
+                f.write('\n# Data [count]\n')
+                f.write(str(SpectrOMat.data))
+            SpectrOMat.message.set('Data saved to ' + time.strftime('Snapshot-%Y-%m-%dT%H:%M:%S.dat', time.gmtime()) + '. Ready.')
+        except:
+            SpectrOMat.message.set('Error while writing ' + time.strftime('Snapshot-%Y-%m-%dT%H:%M:%S.dat', time.gmtime()) + '. Ready.')
+        root.update()
+
+    @staticmethod
     def reset():
         SpectrOMat.run_measurement = False
         SpectrOMat.button_startpause_text.set(SpectrOMat.button_startpause_texts[SpectrOMat.run_measurement])
@@ -250,21 +275,23 @@ class SpectrOMat:
             plot.clf()
             plot.suptitle(time.strftime(SpectrOMat.timestamp, time.gmtime()) +
                          ' (sum of ' + str(SpectrOMat.measurement) + ' measurement(s)' +
-                         ' with integration time ' + str(SpectrOMat.scan_time.get()) + ' µs)')
+                         ' with scan time ' + str(SpectrOMat.scan_time.get()) + ' µs)')
             plot.xlabel('Wavelengths [nm]')
             plot.ylabel('Intensities [count]')
             plot.plot(SpectrOMat.wavelengths, SpectrOMat.data)
             plot.show()
             plot.pause(0.0001)
             if (reset_after > 0):
-                SpectrOMat.measurement %= reset_after
-            if (SpectrOMat.measurement == 0):
-                print(time.strftime(SpectrOMat.timestamp, time.gmtime()), SpectrOMat.data) 
-                if SpectrOMat.autorepeat.get() == 0:
-                    SpectrOMat.run_measurement = False
-                    SpectrOMat.button_startpause_text.set(SpectrOMat.button_startpause_texts[SpectrOMat.run_measurement])
-                    SpectrOMat.button_stopdarkness_text.set(SpectrOMat.button_stopdarkness_texts[SpectrOMat.run_measurement])
-                    SpectrOMat.message.set('Ready.')
+                if SpectrOMat.measurement % reset_after == 0:
+                    print(time.strftime(SpectrOMat.timestamp, time.gmtime()), SpectrOMat.data)
+                    if SpectrOMat.autosave.get() != 0:
+                        SpectrOMat.save()
+                    SpectrOMat.measurement = 0
+                    if SpectrOMat.autorepeat.get() == 0:
+                        SpectrOMat.run_measurement = False
+                        SpectrOMat.button_startpause_text.set(SpectrOMat.button_startpause_texts[SpectrOMat.run_measurement])
+                        SpectrOMat.button_stopdarkness_text.set(SpectrOMat.button_stopdarkness_texts[SpectrOMat.run_measurement])
+                        SpectrOMat.message.set('Ready.')
 
         root.after(1, SpectrOMat.measure)
 
