@@ -24,6 +24,15 @@ import seabreeze.spectrometers as sb
 root = Tk()
 
 
+# Global helper function
+def StringIsInt(s):
+    try:
+        int(s)
+        return True
+    except ValueError:
+        return False
+
+
 class SpectrOMat:
     @staticmethod
     def initialize(root, device='#0', scan_time=100000, reset_after=1, timestamp='%Y-%m-%dT%H:%M:%S%z', couple_times=True):
@@ -44,12 +53,18 @@ class SpectrOMat:
             sys.exit(1)
 
         SpectrOMat.run_measurement = False
-        SpectrOMat.repeat_measurement = True
+        SpectrOMat.have_darkness_correction = False
         SpectrOMat.button_startpause_texts = { True: 'Pause Measurement', False: 'Start Measurement' }
         SpectrOMat.button_stopdarkness_texts = { True: 'Stop Measurement', False: 'Get Darkness Correction' }
 
         SpectrOMat.timestamp = timestamp
-        SpectrOMat.repeat = IntVar()
+        SpectrOMat.resetafter = StringVar()
+        SpectrOMat.scantime = StringVar()
+        SpectrOMat.darkframes = StringVar()
+        SpectrOMat.autorepeat = IntVar()
+        SpectrOMat.autosave = IntVar()
+        SpectrOMat.autoexposure = IntVar()
+        SpectrOMat.message = StringVar()
 
         # Initialize variables
         SpectrOMat.darkness_correction = [0.0]*(len(SpectrOMat.spectrometer.wavelengths()))
@@ -60,49 +75,112 @@ class SpectrOMat:
         plot.ion()
 
         # Define the layout elements
-        SpectrOMat.reset_after = Scale(root, from_=0, to=1000, label='Reset after', orient=HORIZONTAL, command=SpectrOMat.update_reset_after)
+        SpectrOMat.reset_after_label = Label(root, text='Reset after\nn Measurements', justify=LEFT)
+        SpectrOMat.reset_after = Scale(root, from_=0, to=10000, showvalue=0, orient=HORIZONTAL, command=SpectrOMat.update_reset_after)
         SpectrOMat.reset_after.set(reset_after)
+        SpectrOMat.reset_after_entry = Entry(root, textvariable=SpectrOMat.resetafter, validate='focusout', validatecommand=SpectrOMat.validate_reset_after)
 
-        SpectrOMat.scan_time = Scale(root, from_=SpectrOMat.spectrometer.minimum_integration_time_micros, to=10000000, label='Scan time', orient=HORIZONTAL, command=SpectrOMat.update_scan_time)
+        SpectrOMat.scan_time_label = Label(root, text='Scan Time [µs]', justify=LEFT)
+        SpectrOMat.scan_time = Scale(root, from_=SpectrOMat.spectrometer.minimum_integration_time_micros, to=10000000, showvalue=0, orient=HORIZONTAL, command=SpectrOMat.update_scan_time)
         SpectrOMat.scan_time.set(scan_time)
+        SpectrOMat.scan_time_entry = Entry(root, textvariable=SpectrOMat.scantime, validate='focusout', validatecommand=SpectrOMat.validate_scan_time)
 
-        SpectrOMat.dark_frames = Scale(root, from_=1, to=1000, label='Dark frames', orient=HORIZONTAL, command=SpectrOMat.update_dark_frames)
+        SpectrOMat.dark_frames_label = Label(root, text='Dark Frame Count', justify=LEFT)
+        SpectrOMat.dark_frames = Scale(root, from_=1, to=10000, showvalue=0, orient=HORIZONTAL, command=SpectrOMat.update_dark_frames)
+        SpectrOMat.dark_frames.set(2) # This is necessary because the update function is not triggered if the value is set to the lower boundary (which is probably the default)
         SpectrOMat.dark_frames.set(1)
+        SpectrOMat.dark_frames_entry = Entry(root, textvariable=SpectrOMat.darkframes, validate='focusout', validatecommand=SpectrOMat.validate_dark_frames)
 
         SpectrOMat.button_startpause_text = StringVar()
         SpectrOMat.button_startpause_text.set(SpectrOMat.button_startpause_texts[SpectrOMat.run_measurement])
         SpectrOMat.button_startpause = Button(root, textvariable=SpectrOMat.button_startpause_text, command=SpectrOMat.startpause)
 
-        SpectrOMat.checkbutton_repeat = Checkbutton(root, text='Auto Repeat', variable=SpectrOMat.repeat)
+        SpectrOMat.checkbutton_autorepeat = Checkbutton(root, text='Auto Repeat', variable=SpectrOMat.autorepeat)
+        SpectrOMat.checkbutton_autosave = Checkbutton(root, text='Auto Save', variable=SpectrOMat.autosave)
+        SpectrOMat.checkbutton_autoexposure = Checkbutton(root, text='Constant Total Exposure', variable=SpectrOMat.autoexposure)
 
         SpectrOMat.button_stopdarkness_text = StringVar()
         SpectrOMat.button_stopdarkness_text.set(SpectrOMat.button_stopdarkness_texts[SpectrOMat.run_measurement])
         SpectrOMat.button_stopdarkness = Button(root, textvariable=SpectrOMat.button_stopdarkness_text, command=SpectrOMat.stopdarkness)
 
+        SpectrOMat.button_save = Button(root, text='Save to File', command=SpectrOMat.reset)
         SpectrOMat.button_reset = Button(root, text='Reset', command=SpectrOMat.reset)
         SpectrOMat.button_exit = Button(root, text='Exit', command=SpectrOMat.exit)
 
+        SpectrOMat.textbox = Label(root, fg='white', bg='black', textvariable=SpectrOMat.message)
+        SpectrOMat.message.set('Ready.')
+
         # Define the layout
-        SpectrOMat.reset_after.grid(column=0, columnspan=2, row=0, rowspan=3)
-        SpectrOMat.scan_time.grid(column=0, columnspan=2, row=3, rowspan=3)
-        SpectrOMat.dark_frames.grid(column=0, columnspan=2, row=6, rowspan=3)
-        SpectrOMat.button_startpause.grid(column=0, columnspan=2, row=9)
-        SpectrOMat.checkbutton_repeat.grid(column=0, columnspan=2, row=10)
-        SpectrOMat.button_stopdarkness.grid(column=0, columnspan=2, row=11)
-        SpectrOMat.button_reset.grid(column=0, row=12)
-        SpectrOMat.button_exit.grid(column=1, row=12)
+        SpectrOMat.reset_after_label.grid(rowspan=2)
+        SpectrOMat.reset_after.grid(row=0, column=1, rowspan=2)
+        SpectrOMat.reset_after_entry.grid(row=1, column=2)
+
+        SpectrOMat.scan_time_label.grid(rowspan=2)
+        SpectrOMat.scan_time.grid(row=2, column=1, rowspan=2)
+        SpectrOMat.scan_time_entry.grid(row=3, column=2)
+
+        SpectrOMat.dark_frames_label.grid(rowspan=2)
+        SpectrOMat.dark_frames.grid(row=4, column=1, rowspan=2)
+        SpectrOMat.dark_frames_entry.grid(row=5, column=2)
+
+        SpectrOMat.checkbutton_autorepeat.grid(row=6)
+        SpectrOMat.checkbutton_autosave.grid(row=6, column=1)
+        SpectrOMat.checkbutton_autoexposure.grid(row=6, column=2)
+
+        SpectrOMat.button_startpause.grid(row=7, columnspan=2)
+        SpectrOMat.button_stopdarkness.grid(row=7, column=2)
+
+        SpectrOMat.button_save.grid(row=8)
+        SpectrOMat.button_reset.grid(row=8, column=1)
+        SpectrOMat.button_exit.grid(row=8, column=2)
+
+        SpectrOMat.textbox.grid(columnspan=3)
 
     @staticmethod
     def update_reset_after(newValue):
-        True
+        SpectrOMat.resetafter.set(newValue)
+
+    @staticmethod
+    def validate_reset_after():
+        newValue = SpectrOMat.resetafter.get()
+        if StringIsInt(newValue) and \
+           int(newValue) >= 0 and \
+           int(newValue) <= 10000:
+            SpectrOMat.reset_after.set(int(newValue))
+        else:
+            SpectrOMat.resetafter.set(SpectrOMat.reset_after.get())
+        return True
 
     @staticmethod
     def update_scan_time(newValue):
+        SpectrOMat.scantime.set(newValue)
         SpectrOMat.spectrometer.integration_time_micros(int(newValue))
 
     @staticmethod
+    def validate_scan_time():
+        newValue = SpectrOMat.scantime.get()
+        if StringIsInt(newValue) and \
+           int(newValue) >= SpectrOMat.spectrometer.minimum_integration_time_micros and \
+           int(newValue) <= 10000000:
+            SpectrOMat.scan_time.set(int(newValue))
+        else:
+            SpectrOMat.scantime.set(SpectrOMat.scan_time.get())
+        return True
+
+    @staticmethod
     def update_dark_frames(newValue):
-        SpectrOMat.dark_frames = int(newValue)
+        SpectrOMat.darkframes.set(newValue)
+
+    @staticmethod
+    def validate_dark_frames():
+        newValue = SpectrOMat.darkframes.get()
+        if StringIsInt(newValue) and \
+           int(newValue) >= 1 and \
+           int(newValue) <= 10000:
+            SpectrOMat.dark_frames.set(int(newValue))
+        else:
+            SpectrOMat.darkframes.set(SpectrOMat.dark_frames.get())
+        return True
 
     @staticmethod
     def startpause():
@@ -116,11 +194,14 @@ class SpectrOMat:
             SpectrOMat.run_measurement = False
             SpectrOMat.button_startpause_text.set(SpectrOMat.button_startpause_texts[SpectrOMat.run_measurement])
             SpectrOMat.button_stopdarkness_text.set(SpectrOMat.button_stopdarkness_texts[SpectrOMat.run_measurement])
+            SpectrOMat.message.set('Ready.')
             SpectrOMat.measurement = 0
         else:
             newData = SpectrOMat.spectrometer.intensities()
             count = 1
-            while count < SpectrOMat.dark_frames:
+            SpectrOMat.message.set('Scanning dark frame ' + str(count) + '/' + str(SpectrOMat.dark_frames.get()))
+            root.update()
+            while count < SpectrOMat.dark_frames.get():
                 newData = list(map(lambda x,y:x+y, SpectrOMat.spectrometer.intensities(), newData))
                 if (count % 100 == 0):
                     print('O', end='', flush=True)
@@ -129,8 +210,12 @@ class SpectrOMat:
                 else:
                     print('.', end='', flush=True)
                 count += 1
+                SpectrOMat.message.set('Scanning dark frame ' + str(count) + '/' + str(SpectrOMat.dark_frames.get()))
+                root.update()
             SpectrOMat.darkness_correction = list(map(lambda x:x/count, newData))
+            SpectrOMat.have_darkness_correction = True
             print('Darkness correction:', SpectrOMat.darkness_correction)
+            SpectrOMat.message.set(str(SpectrOMat.dark_frames.get()) + ' dark frames scanned. Ready.')
 
     @staticmethod
     def reset():
@@ -138,7 +223,9 @@ class SpectrOMat:
         SpectrOMat.button_startpause_text.set(SpectrOMat.button_startpause_texts[SpectrOMat.run_measurement])
         SpectrOMat.button_stopdarkness_text.set(SpectrOMat.button_stopdarkness_texts[SpectrOMat.run_measurement])
         SpectrOMat.darkness_correction = [0.0]*(len(SpectrOMat.spectrometer.wavelengths()))
+        SpectrOMat.have_darkness_correction = False
         SpectrOMat.measurement = 0
+        SpectrOMat.message.set('All parameters reset. Ready.')
 
     @staticmethod
     def exit():
@@ -149,6 +236,11 @@ class SpectrOMat:
     def measure():
         if SpectrOMat.run_measurement:
             reset_after = SpectrOMat.reset_after.get()
+            if (reset_after > 0):
+                SpectrOMat.message.set('Scanning frame ' + str(SpectrOMat.measurement+1) + '/' + str(reset_after) + '...')
+            else:
+                SpectrOMat.message.set('Scanning frame...')
+            root.update()
             newData = list(map(lambda x,y:x-y, SpectrOMat.spectrometer.intensities(), SpectrOMat.darkness_correction))
             if (SpectrOMat.measurement == 0):
                 SpectrOMat.data = newData
@@ -168,10 +260,11 @@ class SpectrOMat:
                 SpectrOMat.measurement %= reset_after
             if (SpectrOMat.measurement == 0):
                 print(time.strftime(SpectrOMat.timestamp, time.gmtime()), SpectrOMat.data) 
-                if SpectrOMat.repeat.get() == 0:
+                if SpectrOMat.autorepeat.get() == 0:
                     SpectrOMat.run_measurement = False
                     SpectrOMat.button_startpause_text.set(SpectrOMat.button_startpause_texts[SpectrOMat.run_measurement])
                     SpectrOMat.button_stopdarkness_text.set(SpectrOMat.button_stopdarkness_texts[SpectrOMat.run_measurement])
+                    SpectrOMat.message.set('Ready.')
 
         root.after(1, SpectrOMat.measure)
 
