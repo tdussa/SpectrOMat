@@ -50,7 +50,6 @@ class SpectrOMat:
 
         SpectrOMat.timestamp = timestamp
         SpectrOMat.repeat = IntVar()
-#        SpectrOMat.couple_times = IntVar
 
         # Initialize variables
         SpectrOMat.darkness_correction = [0.0]*(len(SpectrOMat.spectrometer.wavelengths()))
@@ -61,11 +60,14 @@ class SpectrOMat:
         plot.ion()
 
         # Define the layout elements
-        SpectrOMat.reset_after = Scale(root, from_=0, to=100000, label='Reset after', orient=HORIZONTAL, command=SpectrOMat.update_reset_after)
+        SpectrOMat.reset_after = Scale(root, from_=0, to=1000, label='Reset after', orient=HORIZONTAL, command=SpectrOMat.update_reset_after)
         SpectrOMat.reset_after.set(reset_after)
 
         SpectrOMat.scan_time = Scale(root, from_=SpectrOMat.spectrometer.minimum_integration_time_micros, to=10000000, label='Scan time', orient=HORIZONTAL, command=SpectrOMat.update_scan_time)
         SpectrOMat.scan_time.set(scan_time)
+
+        SpectrOMat.dark_frames = Scale(root, from_=1, to=1000, label='Dark frames', orient=HORIZONTAL, command=SpectrOMat.update_dark_frames)
+        SpectrOMat.dark_frames.set(1)
 
         SpectrOMat.button_startpause_text = StringVar()
         SpectrOMat.button_startpause_text.set(SpectrOMat.button_startpause_texts[SpectrOMat.run_measurement])
@@ -83,11 +85,12 @@ class SpectrOMat:
         # Define the layout
         SpectrOMat.reset_after.grid(column=0, columnspan=2, row=0, rowspan=3)
         SpectrOMat.scan_time.grid(column=0, columnspan=2, row=3, rowspan=3)
-        SpectrOMat.button_startpause.grid(column=0, columnspan=2, row=7)
-        SpectrOMat.checkbutton_repeat.grid(column=0, columnspan=2, row=8)
-        SpectrOMat.button_stopdarkness.grid(column=0, columnspan=2, row=9)
-        SpectrOMat.button_reset.grid(column=0, row=10)
-        SpectrOMat.button_exit.grid(column=1, row=10)
+        SpectrOMat.dark_frames.grid(column=0, columnspan=2, row=6, rowspan=3)
+        SpectrOMat.button_startpause.grid(column=0, columnspan=2, row=9)
+        SpectrOMat.checkbutton_repeat.grid(column=0, columnspan=2, row=10)
+        SpectrOMat.button_stopdarkness.grid(column=0, columnspan=2, row=11)
+        SpectrOMat.button_reset.grid(column=0, row=12)
+        SpectrOMat.button_exit.grid(column=1, row=12)
 
     @staticmethod
     def update_reset_after(newValue):
@@ -96,6 +99,10 @@ class SpectrOMat:
     @staticmethod
     def update_scan_time(newValue):
         SpectrOMat.spectrometer.integration_time_micros(int(newValue))
+
+    @staticmethod
+    def update_dark_frames(newValue):
+        SpectrOMat.dark_frames = int(newValue)
 
     @staticmethod
     def startpause():
@@ -112,7 +119,17 @@ class SpectrOMat:
             SpectrOMat.measurement = 0
         else:
             newData = SpectrOMat.spectrometer.intensities()
-            SpectrOMat.darkness_correction = newData
+            count = 1
+            while count < SpectrOMat.dark_frames:
+                newData = list(map(lambda x,y:x+y, SpectrOMat.spectrometer.intensities(), newData))
+                if (count % 100 == 0):
+                    print('O', end='', flush=True)
+                elif (count % 10 == 0):
+                    print('o', end='', flush=True)
+                else:
+                    print('.', end='', flush=True)
+                count += 1
+            SpectrOMat.darkness_correction = list(map(lambda x:x/count, newData))
             print('Darkness correction:', SpectrOMat.darkness_correction)
 
     @staticmethod
