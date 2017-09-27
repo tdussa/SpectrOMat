@@ -214,32 +214,31 @@ class SpectrOMat:
                 root.update()
             SpectrOMat.darkness_correction = list(map(lambda x:x/count, newData))
             SpectrOMat.have_darkness_correction = True
-            print('Darkness correction:', SpectrOMat.darkness_correction)
             SpectrOMat.message.set(str(SpectrOMat.dark_frames.get()) + ' dark frames scanned. Ready.')
+            print(str(SpectrOMat.dark_frames.get()) + ' dark frames scanned.')
 
     @staticmethod
     def save():
         try:
             with open(time.strftime('Snapshot-%Y-%m-%dT%H:%M:%S.dat', time.gmtime()), 'w') as f:
-                f.write('# Spectr-O-Mat data format\n')
-                f.write('1')
-                f.write('\n# Time of snapshot\n')
-                f.write(time.strftime(SpectrOMat.timestamp, time.gmtime()))
-                f.write('\n# Number of frames accumulated\n')
-                f.write(str(SpectrOMat.measurement))
-                f.write('\n# Scan time per exposure [µs]\n')
-                f.write(str(SpectrOMat.scan_time.get()))
-                f.write('\n# Dark frame count\n')
-                f.write(str(SpectrOMat.dark_frames.get()))
-                f.write('\n# Wavelengths [nm]\n')
-                f.write(str(list(SpectrOMat.spectrometer.wavelengths())))
-                f.write('\n# Dark frame correction data [count]\n')
-                f.write(str(SpectrOMat.darkness_correction))
-                f.write('\n# Data [count]\n')
-                f.write(str(SpectrOMat.data))
+                f.write('# Spectr-O-Mat data format: 2')
+                f.write('\n# Time of snapshot: ' + time.strftime(SpectrOMat.timestamp, time.gmtime()))
+                f.write('\n# Number of frames accumulated: ' + str(SpectrOMat.measurement))
+                f.write('\n# Scan time per exposure [µs]: ' + str(SpectrOMat.scan_time.get()))
+                if SpectrOMat.have_darkness_correction:
+                    f.write('\n# Number of dark frames accumulated: ' + str(SpectrOMat.dark_frames.get()))
+                    f.write('\n# Wavelength [nm], dark frame correction data [averaged count]:\n# ')
+                    f.write('\n# '.join(map(lambda x,y:str(x)+', '+str(y), SpectrOMat.spectrometer.wavelengths(), SpectrOMat.darkness_correction)))
+                    f.write('\n# Wavelength [nm], Intensity [corrected count]:\n')
+                else:
+                    f.write('\n# Number of dark frames accumulated: None.')
+                    f.write('\n# Wavelength [nm], Intensity [count]:\n')
+                f.write('\n'.join(map(lambda x,y:str(x)+', '+str(y), SpectrOMat.spectrometer.wavelengths(), SpectrOMat.data)) + '\n')
             SpectrOMat.message.set('Data saved to ' + time.strftime('Snapshot-%Y-%m-%dT%H:%M:%S.dat', time.gmtime()) + '. Ready.')
+            print('Data saved to ' + time.strftime('Snapshot-%Y-%m-%dT%H:%M:%S.dat', time.gmtime()))
         except:
             SpectrOMat.message.set('Error while writing ' + time.strftime('Snapshot-%Y-%m-%dT%H:%M:%S.dat', time.gmtime()) + '. Ready.')
+            print('Error while writing ' + time.strftime('Snapshot-%Y-%m-%dT%H:%M:%S.dat', time.gmtime()))
         root.update()
 
     @staticmethod
@@ -277,13 +276,22 @@ class SpectrOMat:
                          ' (sum of ' + str(SpectrOMat.measurement) + ' measurement(s)' +
                          ' with scan time ' + str(SpectrOMat.scan_time.get()) + ' µs)')
             plot.xlabel('Wavelengths [nm]')
-            plot.ylabel('Intensities [count]')
+            if SpectrOMat.have_darkness_correction:
+                plot.ylabel('Intensities [corrected count]')
+            else:
+                plot.ylabel('Intensities [count]')
             plot.plot(SpectrOMat.wavelengths, SpectrOMat.data)
             plot.show()
+            if (SpectrOMat.measurement % 100 == 0):
+                print('O', end='', flush=True)
+            elif (SpectrOMat.measurement % 10 == 0):
+                print('o', end='', flush=True)
+            else:
+                print('.', end='', flush=True)
             plot.pause(0.0001)
             if (reset_after > 0):
                 if SpectrOMat.measurement % reset_after == 0:
-                    print(time.strftime(SpectrOMat.timestamp, time.gmtime()), SpectrOMat.data)
+                    #print(time.strftime(SpectrOMat.timestamp, time.gmtime()), SpectrOMat.data)
                     if SpectrOMat.autosave.get() != 0:
                         SpectrOMat.save()
                     SpectrOMat.measurement = 0
