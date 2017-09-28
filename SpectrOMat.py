@@ -283,7 +283,7 @@ class SpectrOMat:
     @staticmethod
     def measure():
         if SpectrOMat.run_measurement:
-            scan_frames = SpectrOMat.scan_frames.get()
+            scan_frames = int(SpectrOMat.scan_frames.get())
             if (scan_frames > 0):
                 SpectrOMat.message.set('Scanning frame ' + str(SpectrOMat.measurement+1) + '/' + str(scan_frames) + '...')
             else:
@@ -295,24 +295,28 @@ class SpectrOMat:
             else:
                 SpectrOMat.data = list(map(lambda x,y:x+y, SpectrOMat.data, newData))
             SpectrOMat.measurement += 1
-            plot.clf()
-            plot.suptitle(time.strftime(SpectrOMat.timestamp, time.gmtime()) +
-                         ' (sum of ' + str(SpectrOMat.measurement) + ' measurement(s)' +
-                         ' with scan time ' + str(SpectrOMat.scan_time.get()) + ' µs)')
-            plot.xlabel('Wavelengths [nm]')
-            if SpectrOMat.have_darkness_correction:
-                plot.ylabel('Intensities [corrected count]')
-            else:
-                plot.ylabel('Intensities [count]')
-            plot.plot(SpectrOMat.wavelengths, SpectrOMat.data)
-            plot.show()
+
+            if (SpectrOMat.measurement == scan_frames) or \
+               (SpectrOMat.enable_plot.get() > 0):
+                plot.clf()
+                plot.suptitle(time.strftime(SpectrOMat.timestamp, time.gmtime()) +
+                             ' (sum of ' + str(SpectrOMat.measurement) + ' measurement(s)' +
+                             ' with scan time ' + str(SpectrOMat.scan_time.get()) + ' µs)')
+                plot.xlabel('Wavelengths [nm]')
+                if SpectrOMat.have_darkness_correction:
+                    plot.ylabel('Intensities [corrected count]')
+                else:
+                    plot.ylabel('Intensities [count]')
+                plot.plot(SpectrOMat.wavelengths, SpectrOMat.data)
+                plot.show()
+                plot.pause(0.0001)
+
             if (SpectrOMat.measurement % 100 == 0):
                 print('O', end='', flush=True)
             elif (SpectrOMat.measurement % 10 == 0):
                 print('o', end='', flush=True)
             else:
                 print('.', end='', flush=True)
-            plot.pause(0.0001)
             if (scan_frames > 0):
                 if SpectrOMat.measurement % scan_frames == 0:
                     #print(time.strftime(SpectrOMat.timestamp, time.gmtime()), SpectrOMat.data)
