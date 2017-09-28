@@ -157,6 +157,7 @@ class SpectrOMat:
     @staticmethod
     def update_scan_frames(newValue):
         SpectrOMat.scan_frames.set(newValue)
+        SpectrOMat.dark_frames.set(newValue)
 
     @staticmethod
     def validate_scan_frames():
@@ -165,6 +166,8 @@ class SpectrOMat:
            int(newValue) >= 0 and \
            int(newValue) <= 10000:
             SpectrOMat.scale_scan_frames.set(int(newValue))
+            SpectrOMat.scale_dark_frames.set(int(newValue))
+            SpectrOMat.dark_frames.set(newValue)
         else:
             SpectrOMat.scan_frames.set(SpectrOMat.scale_scan_frames.get())
             SpectrOMat.entry_scan_frames.after_idle(SpectrOMat.entry_scan_frames.config, {'validate': 'focusout', 'validatecommand': SpectrOMat.validate_scan_frames})
