@@ -5,7 +5,8 @@ Tkinter
 tkinter
 
 
-numpy
 matplotlib
-seabreeze
+numpy
+pygame
 pyseabreeze
+seabreeze

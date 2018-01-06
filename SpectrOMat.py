@@ -14,6 +14,9 @@ import time
 # Plotting
 import matplotlib.pyplot as plot
 
+# Audio
+import pygame
+
 # SeaBreeze USB spectrometer access library
 import seabreeze
 seabreeze.use("pyseabreeze")
@@ -43,6 +46,7 @@ class SpectrOMat:
                    dark_frames=1,
                    device='#0',
                    enable_plot=True,
+                   enable_audio=False,
                    output_file='Snapshot-%Y-%m-%dT%H:%M:%S%z.dat',
                    scan_frames=1,
                    scan_time=100000,
@@ -69,21 +73,34 @@ class SpectrOMat:
         SpectrOMat.button_startpause_texts = { True: 'Pause Measurement', False: 'Start Measurement' }
         SpectrOMat.button_stopdarkness_texts = { True: 'Stop Measurement', False: 'Get Darkness Correction' }
 
-        SpectrOMat.autoexposure = IntVar()
-        SpectrOMat.autorepeat = IntVar()
-        SpectrOMat.autosave = IntVar()
-        SpectrOMat.dark_frames = StringVar()
-        SpectrOMat.enable_plot = IntVar()
-        SpectrOMat.output_file = StringVar()
-        SpectrOMat.scan_frames = StringVar()
-        SpectrOMat.scan_time = StringVar()
+        SpectrOMat.autoexposure = IntVar(value=autoexposure)
+        SpectrOMat.autorepeat = IntVar(value=autorepeat)
+        SpectrOMat.autosave = IntVar(value=autosave)
+        SpectrOMat.dark_frames = StringVar(value=dark_frames)
+        SpectrOMat.enable_plot = IntVar(value=enable_plot)
+        SpectrOMat.enable_audio = IntVar(value=enable_audio)
+        SpectrOMat.output_file = StringVar(value=output_file)
+        SpectrOMat.scan_frames = StringVar(value=scan_frames)
+        SpectrOMat.scan_time = StringVar(value=scan_time)
         SpectrOMat.timestamp = timestamp
+
         SpectrOMat.message = StringVar()
 
+        SpectrOMat.total_exposure = int(scan_frames) * int(scan_time)
+
+        # Initialize audio
+        SpectrOMat.channels = len(SpectrOMat.spectrometer.wavelengths())
+
+        SpectrOMat.samplerate = 44100      # audio sample rate
+        SpectrOMat.max_amplitude = 32767   # audio max amplitude
+
+        pygame.mixer.pre_init(44100, -16, 1, 1024)
+        pygame.init()
+
         # Initialize variables
-        SpectrOMat.darkness_correction = [0.0]*(len(SpectrOMat.spectrometer.wavelengths()))
+        SpectrOMat.darkness_correction = [0.0]*channels
         SpectrOMat.measurement = 0
-        SpectrOMat.data = [0.0]*(len(SpectrOMat.spectrometer.wavelengths()))
+        SpectrOMat.data = [0.0]*channels
 
         # Plot setup
         plot.ion()
@@ -91,25 +108,26 @@ class SpectrOMat:
         # Define the layout elements
         SpectrOMat.label_scan_frames = Label(root, text='Scan Frame Count', justify=LEFT)
         SpectrOMat.scale_scan_frames = Scale(root, from_=0, to=10000, showvalue=0, orient=HORIZONTAL, command=SpectrOMat.update_scan_frames)
-        SpectrOMat.scale_scan_frames.set(scan_frames)
-        SpectrOMat.entry_scan_frames = Entry(root, textvariable=SpectrOMat.scan_frames, validate='focusout', validatecommand=SpectrOMat.validate_scan_frames)
+        SpectrOMat.entry_scan_frames = Entry(root, textvariable=SpectrOMat.scan_frames, validate='focusout')
 
         SpectrOMat.label_scan_time = Label(root, text='Scan Time [µs]', justify=LEFT)
         SpectrOMat.scale_scan_time = Scale(root, from_=SpectrOMat.spectrometer.minimum_integration_time_micros, to=10000000, showvalue=0, orient=HORIZONTAL, command=SpectrOMat.update_scan_time)
-        SpectrOMat.scale_scan_time.set(scan_time)
-        SpectrOMat.entry_scan_time = Entry(root, textvariable=SpectrOMat.scan_time, validate='focusout', validatecommand=SpectrOMat.validate_scan_time)
+        SpectrOMat.entry_scan_time = Entry(root, textvariable=SpectrOMat.scan_time, validate='focusout')
 
         SpectrOMat.label_dark_frames = Label(root, text='Dark Frame Count', justify=LEFT)
         SpectrOMat.scale_dark_frames = Scale(root, from_=1, to=10000, showvalue=0, orient=HORIZONTAL, command=SpectrOMat.update_dark_frames)
-        SpectrOMat.scale_dark_frames.set(2) # This is necessary because the update function is not triggered if the value is set to the lower boundary (which is probably the default)
-        SpectrOMat.scale_dark_frames.set(1)
-        SpectrOMat.entry_dark_frames = Entry(root, textvariable=SpectrOMat.dark_frames, validate='focusout', validatecommand=SpectrOMat.validate_dark_frames)
+        SpectrOMat.entry_dark_frames = Entry(root, textvariable=SpectrOMat.dark_frames, validate='focusout')
+
+        SpectrOMat.entry_scan_frames.config({'validatecommand': SpectrOMat.validate_scan_frames})
+        SpectrOMat.entry_scan_time.config({'validatecommand': SpectrOMat.validate_scan_time})
+        SpectrOMat.entry_dark_frames.config({'validatecommand': SpectrOMat.validate_dark_frames})
 
         SpectrOMat.button_startpause_text = StringVar()
         SpectrOMat.button_startpause_text.set(SpectrOMat.button_startpause_texts[SpectrOMat.run_measurement])
         SpectrOMat.button_startpause = Button(root, textvariable=SpectrOMat.button_startpause_text, command=SpectrOMat.startpause)
 
         SpectrOMat.checkbutton_enable_plot = Checkbutton(root, text='Enable Live Plotting', variable=SpectrOMat.enable_plot)
+        SpectrOMat.checkbutton_enable_audio = Checkbutton(root, text='Enable Audio Output', variable=SpectrOMat.enable_audio)
 
         SpectrOMat.checkbutton_autorepeat = Checkbutton(root, text='Auto Repeat', variable=SpectrOMat.autorepeat)
         SpectrOMat.checkbutton_autosave = Checkbutton(root, text='Auto Save', variable=SpectrOMat.autosave)
@@ -147,17 +165,36 @@ class SpectrOMat:
         SpectrOMat.checkbutton_enable_plot.grid(row=7, column=1)
         SpectrOMat.button_stopdarkness.grid(row=7, column=2)
 
-        SpectrOMat.button_save.grid(row=8)
-        SpectrOMat.button_reset.grid(row=8, column=1)
-        SpectrOMat.button_exit.grid(row=8, column=2)
+        SpectrOMat.checkbutton_enable_audio.grid(row=8, column=1)
+
+        SpectrOMat.button_save.grid(row=9)
+        SpectrOMat.button_reset.grid(row=9, column=1)
+        SpectrOMat.button_exit.grid(row=9, column=2)
 
         SpectrOMat.textbox.grid(columnspan=3)
 
 
     @staticmethod
     def update_scan_frames(newValue):
+        newValue = int(newValue)
+        if SpectrOMat.autoexposure.get() > 0:
+            if newValue == 0 or newValue * 10000000 > SpectrOMat.total_exposure:
+                newValue = int(SpectrOMat.total_exposure / 10000000)
+                if newValue == 0:
+                    newValue = 1
+                SpectrOMat.scale_scan_frames.set(newValue)
+            elif newValue * SpectrOMat.spectrometer.minimum_integration_time_micros < SpectrOMat.total_exposure:
+                newValue = int(SpectrOMat.total_exposure / SpectrOMat.spectrometer.minimum_integration_time_micros)
+                SpectrOMat.scale_scan_frames.set(newValue)
+            newTime = int(SpectrOMat.total_exposure / newValue)
+            print('v', newValue)
+            print('t: ', newTime)
+            #SpectrOMat.scan_time.set(newTime)
+            SpectrOMat.scale_scan_time.set(newTime)
         SpectrOMat.scan_frames.set(newValue)
         SpectrOMat.dark_frames.set(newValue)
+        SpectrOMat.scale_dark_frames.set(newValue)
+        SpectrOMat.total_exposure = int(SpectrOMat.scan_frames.get()) * int(SpectrOMat.scan_time.get())
 
     @staticmethod
     def validate_scan_frames():
@@ -176,8 +213,21 @@ class SpectrOMat:
 
     @staticmethod
     def update_scan_time(newValue):
+        newValue = int(newValue)
+        if SpectrOMat.autoexposure.get() > 0 and \
+           int(SpectrOMat.scan_frames.get()) != 0:
+            if newValue * 10000 > SpectrOMat.total_exposure:
+                newValue = int(SpectrOMat.total_exposure / 10000)
+                print(newValue)
+                SpectrOMat.scale_scan_time.set(newValue)
+            newFrames = int(SpectrOMat.total_exposure / newValue)
+            SpectrOMat.scan_frames.set(newFrames)
+            SpectrOMat.dark_frames.set(newFrames)
+            SpectrOMat.scale_scan_frames.set(newFrames)
+            SpectrOMat.scale_dark_frames.set(newFrames)
         SpectrOMat.scan_time.set(newValue)
-        SpectrOMat.spectrometer.integration_time_micros(int(newValue))
+        SpectrOMat.spectrometer.integration_time_micros(newValue)
+        SpectrOMat.total_exposure = int(SpectrOMat.scan_frames.get()) * int(SpectrOMat.scan_time.get())
 
     @staticmethod
     def validate_scan_time():
@@ -228,7 +278,7 @@ class SpectrOMat:
             count = 1
             SpectrOMat.message.set('Scanning dark frame ' + str(count) + '/' + str(SpectrOMat.dark_frames.get()))
             root.update()
-            while count < SpectrOMat.dark_frames.get():
+            while count < int(SpectrOMat.dark_frames.get()):
                 newData = list(map(lambda x,y:x+y, SpectrOMat.spectrometer.intensities(), newData))
                 if (count % 100 == 0):
                     print('O', end='', flush=True)
@@ -268,7 +318,39 @@ class SpectrOMat:
             print('Error while writing ' + time.strftime('Snapshot-%Y-%m-%dT%H:%M:%S.dat', time.gmtime()))
         root.update()
 
+
     @staticmethod
+    def normalize(sample, amplitude=1):
+        loudness = numpy.max(numpy.abs(sample), axis=0)
+        if (loudness > 0):
+            sample = numpy.multiply(sample, amplitude/loudness)
+        return(sample)
+
+    @staticmethod
+    def synthesize():
+        # normalize data by rescaling to 50, exponentiating, and rescaling to 1
+        normdata = normalize(SpectrOMat.data, 50)
+        normdata = numpy.exp(normdata)
+        normdata = normalize(normdata)
+
+        # inverse FFT
+        spectrum = numpy.concatenate([numpy.zeros(100), \
+                                      normdata, \
+                                      numpy.zeros(SpectrOMat.samplerate - SpectrOMat.channels - 99)])
+        sample = numpy.fft.irfft(spectrum).real
+
+        # normalize to int16 for audio output
+        return(normalize(sample, SpectrOMat.max_amplitude).astype(numpy.int16))
+
+    @staticmethod
+    def update_audio():
+        if not SpectrOMat.audio is None:
+            SpectrOMat.audio.fadeout(25)
+            SpectrOMat.audio = pygame.sndarray.make_sound(SpectrOMat.synthesize())
+            SpectrOMat.audio.play(-1, fade_ms=25)
+
+
+@staticmethod
     def reset():
         SpectrOMat.run_measurement = False
         SpectrOMat.button_startpause_text.set(SpectrOMat.button_startpause_texts[SpectrOMat.run_measurement])
@@ -314,6 +396,9 @@ class SpectrOMat:
                 plot.show()
                 plot.pause(0.0001)
 
+            if (SpectrOMat.enable_audio.get() > 0):
+                SpectrOMat.update_audio()
+
             if (SpectrOMat.measurement % 100 == 0):
                 print('O', end='', flush=True)
             elif (SpectrOMat.measurement % 10 == 0):
@@ -338,7 +423,7 @@ class SpectrOMat:
 def main(device='#0', scan_time=100000, scan_frames=1, timestamp='%Y-%m-%dT%H:%M:%S%z'):
     global root
     root.title('Spectr-O-Mat')
-    SpectrOMat.initialize(root, device, scan_time, scan_frames, timestamp)
+    SpectrOMat.initialize(root, device=device, scan_time=scan_time, scan_frames=scan_frames, timestamp=timestamp)
     root.after(1, SpectrOMat.measure)
     root.mainloop()
 
