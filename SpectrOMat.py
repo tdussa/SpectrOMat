@@ -117,10 +117,9 @@ class SpectrOMat:
         SpectrOMat.total_exposure = int(scan_frames) * int(scan_time)
 
         # Initialize variables
-        channels = len(SpectrOMat.spectrometer.wavelengths())
-        SpectrOMat.darkness_correction = [0.0]*channels
+        SpectrOMat.darkness_correction = [0.0]*(len(SpectrOMat.spectrometer.wavelengths()))
         SpectrOMat.measurement = 0
-        SpectrOMat.data = [0.0]*channels
+        SpectrOMat.data = [0.0]*(len(SpectrOMat.spectrometer.wavelengths()))
 
         # Plot setup
         plot.ion()
