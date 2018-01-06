@@ -4,6 +4,7 @@
 try:
     # for Python2
     from Tkinter import *   ## notice capitalized T in Tkinter
+    input = raw_input
 except ImportError:
     # for Python3
     from tkinter import *   ## notice here too
@@ -13,9 +14,6 @@ import time
 
 # Plotting
 import matplotlib.pyplot as plot
-
-# Audio
-import pygame
 
 # SeaBreeze USB spectrometer access library
 import seabreeze
@@ -36,6 +34,31 @@ def StringIsInt(s):
         return False
 
 
+# SeaBreeze spectrograph simulator
+class SBSimulator:
+    """SeaBreeze specrograph simulator class"""
+    def __init__(self,
+                 integration_time_micros=10000,
+                 minimum_integration_time_micros = 8000,
+                 wavelengths=list(range(2048)),
+                 generator=numpy.random.normal):
+        self.integration_time_micros = integration_time_micros
+        self.minimum_integration_time_micros = minimum_integration_time_micros
+        self._wavelengths = wavelengths
+        self.samplesize = len(wavelengths)
+        self.generator = generator
+
+    def integration_time_micros(self, newValue):
+        if (newValue >= self.minimum_integration_time_micros):
+            self.integration_time_micros = newValue
+
+    def intensities(self):
+        return(self.generator(size=self.samplesize))
+
+    def wavelengths(self):
+        return(self._wavelengths)
+
+
 
 class SpectrOMat:
     @staticmethod
@@ -46,18 +69,19 @@ class SpectrOMat:
                    dark_frames=1,
                    device='#0',
                    enable_plot=True,
-                   enable_audio=False,
                    output_file='Snapshot-%Y-%m-%dT%H:%M:%S%z.dat',
                    scan_frames=1,
                    scan_time=100000,
                    timestamp='%Y-%m-%dT%H:%M:%S%z',
                    ):
-        """Initialize the entire UI."""
         try:
-            if (device[0] == '#'):
+            if ('SIMULATOR'.startswith(device.upper())):
+                SpectrOMat.spectrometer = SBSimulator()
+            elif (device[0] == '#'):
                 SpectrOMat.spectrometer = sb.Spectrometer(sb.list_devices()[int(device[1:])])
             else:
                 SpectrOMat.spectrometer = sb.Spectrometer.from_serial_number(device)
+            print(SpectrOMat.spectrometer)
             SpectrOMat.wavelengths = SpectrOMat.spectrometer.wavelengths()
         except:
             print('ERROR: Could not initialize device "' + device + '"!')
@@ -66,7 +90,12 @@ class SpectrOMat:
             for dev in sb.list_devices():
                 print(' - #' + str(index) + ':', 'Model:', dev.model + '; serial number:', dev.serial)
                 index += 1
-            sys.exit(1)
+            if ('Y'.input('Simulate spectrometer device instead? [Y/n] ').upper()):
+                SpectrOMat.spectrometer = SBSimulator()
+            else:
+                sys.exit(1)
+
+        SpectrOMat.wavelengths = SpectrOMat.spectrometer.wavelengths()
 
         SpectrOMat.run_measurement = False
         SpectrOMat.have_darkness_correction = False
@@ -78,7 +107,6 @@ class SpectrOMat:
         SpectrOMat.autosave = IntVar(value=autosave)
         SpectrOMat.dark_frames = StringVar(value=dark_frames)
         SpectrOMat.enable_plot = IntVar(value=enable_plot)
-        SpectrOMat.enable_audio = IntVar(value=enable_audio)
         SpectrOMat.output_file = StringVar(value=output_file)
         SpectrOMat.scan_frames = StringVar(value=scan_frames)
         SpectrOMat.scan_time = StringVar(value=scan_time)
@@ -88,16 +116,8 @@ class SpectrOMat:
 
         SpectrOMat.total_exposure = int(scan_frames) * int(scan_time)
 
-        # Initialize audio
-        SpectrOMat.channels = len(SpectrOMat.spectrometer.wavelengths())
-
-        SpectrOMat.samplerate = 44100      # audio sample rate
-        SpectrOMat.max_amplitude = 32767   # audio max amplitude
-
-        pygame.mixer.pre_init(44100, -16, 1, 1024)
-        pygame.init()
-
         # Initialize variables
+        channels = len(SpectrOMat.spectrometer.wavelengths())
         SpectrOMat.darkness_correction = [0.0]*channels
         SpectrOMat.measurement = 0
         SpectrOMat.data = [0.0]*channels
@@ -127,7 +147,6 @@ class SpectrOMat:
         SpectrOMat.button_startpause = Button(root, textvariable=SpectrOMat.button_startpause_text, command=SpectrOMat.startpause)
 
         SpectrOMat.checkbutton_enable_plot = Checkbutton(root, text='Enable Live Plotting', variable=SpectrOMat.enable_plot)
-        SpectrOMat.checkbutton_enable_audio = Checkbutton(root, text='Enable Audio Output', variable=SpectrOMat.enable_audio)
 
         SpectrOMat.checkbutton_autorepeat = Checkbutton(root, text='Auto Repeat', variable=SpectrOMat.autorepeat)
         SpectrOMat.checkbutton_autosave = Checkbutton(root, text='Auto Save', variable=SpectrOMat.autosave)
@@ -165,11 +184,9 @@ class SpectrOMat:
         SpectrOMat.checkbutton_enable_plot.grid(row=7, column=1)
         SpectrOMat.button_stopdarkness.grid(row=7, column=2)
 
-        SpectrOMat.checkbutton_enable_audio.grid(row=8, column=1)
-
-        SpectrOMat.button_save.grid(row=9)
-        SpectrOMat.button_reset.grid(row=9, column=1)
-        SpectrOMat.button_exit.grid(row=9, column=2)
+        SpectrOMat.button_save.grid(row=8)
+        SpectrOMat.button_reset.grid(row=8, column=1)
+        SpectrOMat.button_exit.grid(row=8, column=2)
 
         SpectrOMat.textbox.grid(columnspan=3)
 
@@ -320,37 +337,6 @@ class SpectrOMat:
 
 
     @staticmethod
-    def normalize(sample, amplitude=1):
-        loudness = numpy.max(numpy.abs(sample), axis=0)
-        if (loudness > 0):
-            sample = numpy.multiply(sample, amplitude/loudness)
-        return(sample)
-
-    @staticmethod
-    def synthesize():
-        # normalize data by rescaling to 50, exponentiating, and rescaling to 1
-        normdata = normalize(SpectrOMat.data, 50)
-        normdata = numpy.exp(normdata)
-        normdata = normalize(normdata)
-
-        # inverse FFT
-        spectrum = numpy.concatenate([numpy.zeros(100), \
-                                      normdata, \
-                                      numpy.zeros(SpectrOMat.samplerate - SpectrOMat.channels - 99)])
-        sample = numpy.fft.irfft(spectrum).real
-
-        # normalize to int16 for audio output
-        return(normalize(sample, SpectrOMat.max_amplitude).astype(numpy.int16))
-
-    @staticmethod
-    def update_audio():
-        if not SpectrOMat.audio is None:
-            SpectrOMat.audio.fadeout(25)
-            SpectrOMat.audio = pygame.sndarray.make_sound(SpectrOMat.synthesize())
-            SpectrOMat.audio.play(-1, fade_ms=25)
-
-
-@staticmethod
     def reset():
         SpectrOMat.run_measurement = False
         SpectrOMat.button_startpause_text.set(SpectrOMat.button_startpause_texts[SpectrOMat.run_measurement])
@@ -396,9 +382,6 @@ class SpectrOMat:
                 plot.show()
                 plot.pause(0.0001)
 
-            if (SpectrOMat.enable_audio.get() > 0):
-                SpectrOMat.update_audio()
-
             if (SpectrOMat.measurement % 100 == 0):
                 print('O', end='', flush=True)
             elif (SpectrOMat.measurement % 10 == 0):
@@ -431,7 +414,7 @@ if __name__ == "__main__":
     # Parse args
     from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument('-d', '--device', dest='device', default='#0', help='input device to use; "<serial number>" or "#<device number>" (default: #0)')
+    parser.add_argument('-d', '--device', dest='device', default='#0', help='input device to use; "<serial number>" or "#<device number>" or "SIMULATOR" (default: #0)')
     parser.add_argument('-r', '--scan_frames', dest='scan_frames', default='1', help='reset after n measurement cycles with 0 meaning indefinite (default: 1)')
     parser.add_argument('-s', '--scan_time', dest='scan_time', default='100000', help='scan time in microseconds (default: 100000)')
     parser.add_argument('-t', '--timestamp',  dest='timestamp', default='%Y-%m-%dT%H:%M:%S%z', help='itemstamp format string (default: "%%Y-%%m-%%dT%%H:%%M:%%S%%z")')
