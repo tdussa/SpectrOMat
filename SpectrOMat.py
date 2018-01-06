@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
-
+import timeit
 try:
     # for Python2
     from Tkinter import *   ## notice capitalized T in Tkinter
@@ -90,7 +90,7 @@ class SpectrOMat:
             for dev in sb.list_devices():
                 print(' - #' + str(index) + ':', 'Model:', dev.model + '; serial number:', dev.serial)
                 index += 1
-            if ('Y'.input('Simulate spectrometer device instead? [Y/n] ').upper()):
+            if ('Y'.startswith(input('Simulate spectrometer device instead?  [Y/n] ').upper())):
                 SpectrOMat.spectrometer = SBSimulator()
             else:
                 sys.exit(1)
