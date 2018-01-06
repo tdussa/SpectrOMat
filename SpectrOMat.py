@@ -13,7 +13,10 @@ import numpy
 import time
 
 # Plotting
+import matplotlib.animation as animation
 import matplotlib.pyplot as plot
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+SpectrOMat_animation = None
 
 # SeaBreeze USB spectrometer access library
 import seabreeze
@@ -41,19 +44,24 @@ class SBSimulator:
                  integration_time_micros=10000,
                  minimum_integration_time_micros = 8000,
                  wavelengths=list(range(2048)),
-                 generator=numpy.random.normal):
+                 generator=numpy.random.normal,
+                 histogram=True):
         self.integration_time_micros = integration_time_micros
         self.minimum_integration_time_micros = minimum_integration_time_micros
         self._wavelengths = wavelengths
         self.samplesize = len(wavelengths)
         self.generator = generator
+        self.histogram = histogram
 
     def integration_time_micros(self, newValue):
         if (newValue >= self.minimum_integration_time_micros):
             self.integration_time_micros = newValue
 
     def intensities(self):
-        return(self.generator(size=self.samplesize))
+        if self.histogram:
+            return(numpy.histogram(self.generator(size=self.samplesize), bins=self.samplesize)[0])
+        else:
+            return(self.generator(size=self.samplesize))
 
     def wavelengths(self):
         return(self._wavelengths)
@@ -123,6 +131,13 @@ class SpectrOMat:
 
         # Plot setup
         plot.ion()
+        SpectrOMat.figure = plot.figure()
+        SpectrOMat.axes = SpectrOMat.figure.gca()
+        SpectrOMat.graph, = SpectrOMat.axes.plot(SpectrOMat.wavelengths, SpectrOMat.data)
+        SpectrOMat.figure.suptitle('No measurement taken so far.')
+        SpectrOMat.axes.set_xlabel('Wavelengths [nm]')
+        SpectrOMat.axes.set_ylabel('Intensity [count]')
+        SpectrOMat.canvas = FigureCanvasTkAgg(SpectrOMat.figure, master=root)
 
         # Define the layout elements
         SpectrOMat.label_scan_frames = Label(root, text='Scan Frame Count', justify=LEFT)
@@ -188,6 +203,8 @@ class SpectrOMat:
         SpectrOMat.button_exit.grid(row=8, column=2)
 
         SpectrOMat.textbox.grid(columnspan=3)
+
+        SpectrOMat.canvas.get_tk_widget().grid(columnspan=3)
 
 
     @staticmethod
@@ -307,6 +324,7 @@ class SpectrOMat:
                 root.update()
             SpectrOMat.darkness_correction = list(map(lambda x:x/count, newData))
             SpectrOMat.have_darkness_correction = True
+            SpectrOMat.axes.set_ylabel('Intensity [corrected count]')
             SpectrOMat.message.set(str(SpectrOMat.dark_frames.get()) + ' dark frames scanned. Ready.')
             print(str(SpectrOMat.dark_frames.get()) + ' dark frames scanned.')
 
@@ -342,6 +360,9 @@ class SpectrOMat:
         SpectrOMat.button_stopdarkness_text.set(SpectrOMat.button_stopdarkness_texts[SpectrOMat.run_measurement])
         SpectrOMat.darkness_correction = [0.0]*(len(SpectrOMat.spectrometer.wavelengths()))
         SpectrOMat.have_darkness_correction = False
+        SpectrOMat.data = [0.0]*(len(SpectrOMat.spectrometer.wavelengths()))
+        SpectrOMat.figure.suptitle('No measurement taken so far.')
+        SpectrOMat.axes.set_ylabel('Intensity [count]')
         SpectrOMat.measurement = 0
         SpectrOMat.message.set('All parameters reset. Ready.')
 
@@ -349,6 +370,16 @@ class SpectrOMat:
     def exit():
         sys.exit(0)
 
+
+    @staticmethod
+    def update_plot(i):
+        scan_frames = int(SpectrOMat.scan_frames.get())
+        if (SpectrOMat.measurement == scan_frames) or \
+           (SpectrOMat.enable_plot.get() > 0):
+            SpectrOMat.graph.set_ydata(SpectrOMat.data)
+            SpectrOMat.axes.relim()
+            SpectrOMat.axes.autoscale_view(True, True, True)
+        
 
     @staticmethod
     def measure():
@@ -366,20 +397,9 @@ class SpectrOMat:
                 SpectrOMat.data = list(map(lambda x,y:x+y, SpectrOMat.data, newData))
             SpectrOMat.measurement += 1
 
-            if (SpectrOMat.measurement == scan_frames) or \
-               (SpectrOMat.enable_plot.get() > 0):
-                plot.clf()
-                plot.suptitle(time.strftime(SpectrOMat.timestamp, time.gmtime()) +
-                             ' (sum of ' + str(SpectrOMat.measurement) + ' measurement(s)' +
-                             ' with scan time ' + str(SpectrOMat.scan_time.get()) + ' µs)')
-                plot.xlabel('Wavelengths [nm]')
-                if SpectrOMat.have_darkness_correction:
-                    plot.ylabel('Intensities [corrected count]')
-                else:
-                    plot.ylabel('Intensities [count]')
-                plot.plot(SpectrOMat.wavelengths, SpectrOMat.data)
-                plot.show()
-                plot.pause(0.0001)
+            plot.suptitle(time.strftime(SpectrOMat.timestamp, time.gmtime()) +
+                         ' (sum of ' + str(SpectrOMat.measurement) + ' measurement(s)' +
+                         ' with scan time ' + str(SpectrOMat.scan_time.get()) + ' µs)')
 
             if (SpectrOMat.measurement % 100 == 0):
                 print('O', end='', flush=True)
@@ -406,6 +426,7 @@ def main(device='#0', scan_time=100000, scan_frames=1, timestamp='%Y-%m-%dT%H:%M
     global root
     root.title('Spectr-O-Mat')
     SpectrOMat.initialize(root, device=device, scan_time=scan_time, scan_frames=scan_frames, timestamp=timestamp)
+    SpectrOMat_animation = animation.FuncAnimation(SpectrOMat.figure, SpectrOMat.update_plot)
     root.after(1, SpectrOMat.measure)
     root.mainloop()
 
