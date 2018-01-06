@@ -8,4 +8,4 @@ In no particular order:
  * Add autodetection of overexposure
  * Save graph snapshots
  * ~Save data snapshots~
- * Allow live-plotting to be turned off
+ * ~Allow live-plotting to be turned off~
