@@ -9,3 +9,5 @@ In no particular order:
  * Save graph snapshots
  * ~Save data snapshots~
  * ~Allow live-plotting to be turned off~
+ * Make command-line arguments more complete
+ * Make command-line help text more comprehensive
