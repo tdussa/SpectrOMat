@@ -19,9 +19,13 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 SpectrOMat_animation = None
 
 # SeaBreeze USB spectrometer access library
-import seabreeze
-seabreeze.use("pyseabreeze")
-import seabreeze.spectrometers as sb
+try:
+    import seabreeze
+    seabreeze.use("pyseabreeze")
+    import seabreeze.spectrometers as sb
+except ImportError:
+    # Library not installed
+    sb = None
 
 
 # Global control variable
@@ -93,11 +97,14 @@ class SpectrOMat:
             SpectrOMat.wavelengths = SpectrOMat.spectrometer.wavelengths()
         except:
             print('ERROR: Could not initialize device "' + device + '"!')
-            print('Available devices:')
-            index = 0
-            for dev in sb.list_devices():
-                print(' - #' + str(index) + ':', 'Model:', dev.model + '; serial number:', dev.serial)
-                index += 1
+            if (sb is None):
+                print('SeaBreeze library not found!')
+            else:
+                print('Available devices:')
+                index = 0
+                for dev in sb.list_devices():
+                    print(' - #' + str(index) + ':', 'Model:', dev.model + '; serial number:', dev.serial)
+                    index += 1
             if ('Y'.startswith(input('Simulate spectrometer device instead?  [Y/n] ').upper())):
                 SpectrOMat.spectrometer = SBSimulator()
             else:
