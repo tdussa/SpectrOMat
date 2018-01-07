@@ -130,7 +130,6 @@ class SpectrOMat:
         SpectrOMat.data = [0.0]*(len(SpectrOMat.spectrometer.wavelengths()))
 
         # Plot setup
-        plot.ion()
         SpectrOMat.figure = plot.figure()
         SpectrOMat.axes = SpectrOMat.figure.gca()
         SpectrOMat.graph, = SpectrOMat.axes.plot(SpectrOMat.wavelengths, SpectrOMat.data)
