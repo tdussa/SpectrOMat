@@ -1,4 +1,23 @@
 #! /usr/bin/env python
+# -*- coding: utf-8 -*-
+
+###
+# Grab SpectrOMat snapshot files and try to play them as audio.
+# Copyright (C) 2017-2020 Tobias Dussa
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+###
 
 from time import sleep
 import sys
@@ -94,6 +113,14 @@ def _smart_open(filename, mode='Ur'):
             fh.close()
 
 if __name__ == "__main__":
+    # Print license info
+    print('''
+SpectrOMat play_snapshot Copyright (C) 2017-2020 Tobias Dussa
+This program comes with ABSOLUTELY NO WARRANTY; for details see LICENSE.
+This is free software, and you are welcome to redistribute it
+under certain conditions; refer to LICENSE for details.
+    ''');
+
     args = sys.argv[1:]
 
     pygame.mixer.pre_init(44100, -16, 1, 1024)
